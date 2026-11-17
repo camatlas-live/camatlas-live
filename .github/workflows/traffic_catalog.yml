@@ -1,0 +1,36 @@
+name: Update traffic cam catalog
+
+on:
+  schedule:
+    - cron: "42 5 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build traffic catalog
+        env:
+          WSDOT_KEY: ${{ secrets.WSDOT_KEY }}
+          NY511_KEY: ${{ secrets.NY511_KEY }}
+          FL511_KEY: ${{ secrets.FL511_KEY }}
+          TXDOT_KEY: ${{ secrets.TXDOT_KEY }}
+        run: python build_traffic_catalog.py
+      - name: Save catalog
+        run: |
+          git config user.name "catalog-bot"
+          git config user.email "catalog-bot@users.noreply.github.com"
+          git add catalog/traffic_catalog.json
+          if git diff --cached --quiet; then
+            echo "No changes"
+          else
+            git commit -m "Update traffic catalog"
+            git push
+          fi
