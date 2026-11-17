@@ -284,11 +284,14 @@ def hong_kong(cfg) -> list:
             if not k:
                 continue
             low[k.lower().strip()] = v.strip() if isinstance(v, str) else ""
+        code = (low.get("key") or low.get("camera_id") or low.get("code") or "").strip()
         image = _http(low.get("url") or low.get("image") or low.get("image_url"))
+        if not image and code:
+            image = f"https://tdcctv.data.one.gov.hk/{code}.JPG"
         if not image:
             continue
         out.append({
-            "id": f"hk-{low.get('key') or low.get('camera_id') or len(out)}",
+            "id": f"hk-{code or len(out)}",
             "title": low.get("description") or low.get("location") or "Hong Kong camera",
             "city": low.get("district") or "", "region": low.get("region") or "Hong Kong",
             "country": "Hong Kong", "cc": "HK",
@@ -336,9 +339,25 @@ def openstreetmap(cfg) -> list:
     """Public webcams mapped on OpenStreetMap (contact:webcam tag). Open, no key,
     worldwide. Crowdsourced, so quality varies; URLs may be images, streams or
     viewer pages (pages open in the browser)."""
-    query = '[out:json][timeout:120];(nwr["contact:webcam"];);out center tags;'
-    url = "https://overpass-api.de/api/interpreter?data=" + urllib.parse.quote(query)
-    data = fetch(url)
+    query = '[out:json][timeout:180];(nwr["contact:webcam"];);out center tags;'
+    mirrors = [
+        "https://overpass-api.de/api/interpreter",
+        "https://overpass.kumi.systems/api/interpreter",
+        "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+    ]
+    data = None
+    for base in mirrors:
+        try:
+            req = urllib.request.Request(
+                base + "?data=" + urllib.parse.quote(query),
+                headers={"User-Agent": "CamAtlas/1.0"})
+            with urllib.request.urlopen(req, timeout=120, context=_CTX) as r:
+                data = json.load(r)
+            break
+        except Exception as e:
+            print(f"  OSM {base.split('//')[1].split('/')[0]}: {e}", file=sys.stderr)
+    if data is None:
+        return []
     out = []
     for el in data.get("elements", []):
         tags = el.get("tags", {}) or {}
