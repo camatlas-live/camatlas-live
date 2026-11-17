@@ -18,6 +18,7 @@ while all saved streams are re-checked on every run and removed when they end.
 """
 import argparse
 import datetime as dt
+import html
 import json
 import os
 import pathlib
@@ -130,6 +131,7 @@ def fetch_json(path: str, params: dict) -> dict:
             return json.load(r)
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", "ignore")
+        print(f"API error {e.code} on {path}: {body[:500]}", file=sys.stderr)
         if e.code == 403 and ("quota" in body.lower() or "rateLimit" in body):
             raise QuotaExceeded(body) from e
         raise
@@ -159,19 +161,32 @@ def search(query, fetch):
         "maxResults": 25, "q": query["q"], "safeSearch": "strict",
     })
     found = []
-    for item in data.get("items", []):
+    items = data.get("items", [])
+    skipped = []
+    for item in items:
         vid = item.get("id", {}).get("videoId")
         sn = item.get("snippet", {})
-        title = norm(sn.get("title", ""))
-        text = " ".join([title, norm(sn.get("description", "")), norm(sn.get("channelTitle", ""))])
-        if not vid or not has_any(title, CAM_WORDS) or has_any(title, BLOCK_WORDS):
+        title = norm(html.unescape(sn.get("title", "")))
+        text = " ".join([title, norm(html.unescape(sn.get("description", ""))),
+                         norm(sn.get("channelTitle", ""))])
+        if not vid:
+            continue
+        if not has_any(title, CAM_WORDS):
+            skipped.append(("not a cam", title))
+            continue
+        if has_any(title, BLOCK_WORDS):
+            skipped.append(("blocked word", title))
             continue
         if not words_in(text, query["match"]):
+            skipped.append(("wrong place", title))
             continue  # stream is not clearly about this place
         found.append({
             "id": vid, "city": query["city"], "country": query["country"], "cc": query["cc"],
             "lat": query["lat"], "lon": query["lon"], "firstSeen": now_iso(),
         })
+    print(f'[{query["q"]}] results={len(items)} kept={len(found)}')
+    for why, t in skipped[:4]:
+        print(f"    skip ({why}): {t[:80]}")
     return found
 
 
@@ -180,11 +195,12 @@ def verify(streams, fetch):
     by_id = {s["id"]: s for s in streams}
     ids = list(by_id)
     kept = []
+    dropped = 0
     for i in range(0, len(ids), 50):
         chunk = ids[i:i + 50]
         data = fetch("videos", {
             "part": "snippet,liveStreamingDetails,status,recordingDetails",
-            "id": ",".join(chunk), "maxResults": 50,
+            "id": ",".join(chunk),
         })
         for v in data.get("items", []):
             sn, st = v.get("snippet", {}), v.get("status", {})
@@ -211,6 +227,8 @@ def verify(streams, fetch):
                 "checked": now_iso(),
             })
             kept.append(s)
+    dropped = len(ids) - len(kept)
+    print(f"Checked {len(ids)} streams: {len(kept)} live and playable, {dropped} removed.")
     return kept
 
 
