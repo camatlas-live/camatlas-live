@@ -332,6 +332,80 @@ def korea_its(cfg) -> list:
     return out
 
 
+def openstreetmap(cfg) -> list:
+    """Public webcams mapped on OpenStreetMap (contact:webcam tag). Open, no key,
+    worldwide. Crowdsourced, so quality varies; URLs may be images, streams or
+    viewer pages (pages open in the browser)."""
+    query = '[out:json][timeout:120];(nwr["contact:webcam"];);out center tags;'
+    url = "https://overpass-api.de/api/interpreter?data=" + urllib.parse.quote(query)
+    data = fetch(url)
+    out = []
+    for el in data.get("elements", []):
+        tags = el.get("tags", {}) or {}
+        link = _http(tags.get("contact:webcam"))
+        if not link:
+            continue
+        center = el.get("center", {}) or {}
+        lat = el.get("lat", center.get("lat"))
+        lon = el.get("lon", center.get("lon"))
+        base = link.lower().split("?")[0]
+        is_img = base.endswith((".jpg", ".jpeg", ".png", ".webp", ".gif"))
+        is_vid = base.endswith((".m3u8", ".mp4", ".ts"))
+        country = tags.get("addr:country") or ""
+        region = tags.get("addr:state") or tags.get("addr:city") or "OpenStreetMap"
+        out.append({
+            "id": f"osm-{el.get('type','n')[0]}{el.get('id')}",
+            "title": (tags.get("name") or tags.get("description")
+                      or tags.get("addr:city") or "Webcam").strip(),
+            "city": tags.get("addr:city") or "",
+            "region": region,
+            "country": country or "Other (OpenStreetMap)",
+            "cc": (tags.get("addr:country") or "").upper(),
+            "lat": _f(lat), "lon": _f(lon),
+            # image only if it clearly is one; otherwise treat as a stream/page.
+            "image": link if is_img else "",
+            "video": link if (is_vid or not is_img) else "",
+            "route": "", "source": "OpenStreetMap",
+        })
+    return out
+
+
+def nps_usa(cfg) -> list:
+    """US National Park Service webcams. Free key (NPS_KEY). Scenic park cams."""
+    key = os.environ.get("NPS_KEY", "")
+    if not key:
+        return []
+    url = ("https://developer.nps.gov/api/v1/webcams?limit=2000&api_key="
+           + urllib.parse.quote(key))
+    try:
+        data = fetch(url)
+    except Exception as e:
+        print(f"  NPS: {e}", file=sys.stderr)
+        return []
+    out = []
+    for c in data.get("data", []):
+        if (c.get("status") or "Active") != "Active":
+            continue
+        imgs = c.get("images") or []
+        image = _http(imgs[0].get("url")) if imgs and isinstance(imgs[0], dict) else ""
+        video = _http(c.get("streamUrl"))
+        if not (image or video):
+            continue
+        lat = _f(c.get("latitude"))
+        lon = _f(c.get("longitude"))
+        rel = c.get("relatedParks") or []
+        park = rel[0].get("fullName") if rel and isinstance(rel[0], dict) else ""
+        out.append({
+            "id": f"nps-{c.get('id') or c.get('title')}",
+            "title": (c.get("title") or "Park webcam").strip(),
+            "city": park or "", "region": "US National Parks",
+            "country": "United States", "cc": "US",
+            "lat": lat, "lon": lon,
+            "image": image, "video": video, "route": "", "source": "US NPS",
+        })
+    return out
+
+
 def arcgis(cfg) -> list:
     """Generic ESRI ArcGIS FeatureServer/MapServer layer query. Many DOTs use this.
 
@@ -429,6 +503,10 @@ SOURCES = [
     {"name": "Hong Kong (Transport Dept)", "fn": hong_kong, "cfg": {}},  # open
     {"name": "South Korea (ITS)", "fn": korea_its, "env": "KR_ITS_KEY", "cfg": {}},
 
+    # Cross-border open / keyed sources:
+    {"name": "OpenStreetMap webcams", "fn": openstreetmap, "cfg": {}},  # open, worldwide
+    {"name": "US National Parks (NPS)", "fn": nps_usa, "env": "NPS_KEY", "cfg": {}},
+
     # Example ArcGIS source (left off until its URL/fields are verified):
     # {"name": "Example DOT", "fn": arcgis, "cfg": {
     #     "url": "https://example.dot.gov/arcgis/rest/services/CCTV/MapServer/0",
@@ -458,6 +536,7 @@ REGISTER_FOR = {
     "NB511_KEY": "New Brunswick — https://511.gnb.ca/developers",
     "WSDOT_KEY": "Washington    — https://wsdot.wa.gov/traffic/api/",
     "KR_ITS_KEY": "South Korea  — https://www.its.go.kr/opendata/",
+    "NPS_KEY": "US Nat. Parks — https://www.nps.gov/subjects/developer/get-started.htm",
 }
 
 
