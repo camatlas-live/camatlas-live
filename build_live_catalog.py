@@ -87,17 +87,19 @@ COUNTRY_ALIASES = {
 }
 
 # Title must look like a webcam...
-CAM_WORDS = [r"\bcam\b", r"\bcams\b", r"webcam", r"livecam", r"camera", r"kamera",
-             r"camara", r"telecamera", r"live view", r"ライブカメラ", r"en vivo",
-             r"ao vivo", r"canli", r"라이브캠", r"\b24/7\b"]
+CAM_WORDS = [r"cam\b", r"\bcams\b", r"webcam", r"camera", r"kamera", r"camara",
+             r"telecamera", r"\blive\b", r"live ?stream", r"ライブカメラ", r"en vivo",
+             r"en direct", r"ao vivo", r"canli", r"라이브캠", r"\b24/7\b", r"panorama"]
 # ...and not be one of these.
 BLOCK_WORDS = [r"news", r"music", r"radio", r"lofi", r"lo-fi", r"gaming", r"minecraft",
                r"fortnite", r"\bgta\b", r"podcast", r"sermon", r"asmr", r"sleep",
                r"study", r"reaction", r"trading", r"crypto", r"bitcoin", r"forex",
-               r"\bchat\b", r"\birl\b", r"walk", r"walking", r"\btour\b", r"driving",
+               r"\bchat\b", r"\birl\b", r"\bwalk\b", r"walking", r"walking tour", r"driving",
                r"\bdrive\b", r"sexy", r"bikini", r"\bhot\b", r"girl", r"babe", r"nude",
                r"onlyfans", r"dating", r"scanner", r"#shorts", r"sounds", r"relax",
-               r"meditation", r"prank", r"giveaway"]
+               r"meditation", r"prank", r"giveaway", r"concert", r"\bvs\.?\b",
+               r"around the world", r"random cams", r"top live webcams", r"rolling cam",
+               r"interview", r"press conference", r"election", r"debate"]
 
 
 def norm(s: str) -> str:
@@ -111,7 +113,7 @@ def has_any(text: str, patterns) -> bool:
 
 
 def words_in(text: str, names) -> bool:
-    return any(re.search(r"(?<![a-z])" + re.escape(n) + r"(?![a-z])", text) for n in names)
+    return any(re.search(r"(?<![a-z])" + re.escape(n), text) for n in names)
 
 
 def now_iso() -> str:
@@ -132,7 +134,7 @@ def fetch_json(path: str, params: dict) -> dict:
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", "ignore")
         print(f"API error {e.code} on {path}: {body[:500]}", file=sys.stderr)
-        if e.code == 403 and ("quota" in body.lower() or "rateLimit" in body):
+        if e.code in (403, 429) and ("quota" in body.lower() or "ratelimit" in body.lower()):
             raise QuotaExceeded(body) from e
         raise
 
@@ -143,7 +145,8 @@ def build_queries(places):
     for p in places:
         names = ALIASES.get(p["city"], [norm(p["city"])])
         qs.append({"q": f'{p["city"]} live cam', "city": p["city"], "country": p["country"],
-                   "cc": p["cc"], "lat": p["lat"], "lon": p["lon"], "match": names})
+                   "cc": p["cc"], "lat": p["lat"], "lon": p["lon"], "match": names,
+                   "cmatch": COUNTRY_ALIASES.get(p["country"], [norm(p["country"])])})
     seen = set()
     for p in places:
         if p["cc"] in seen:
@@ -151,7 +154,7 @@ def build_queries(places):
         seen.add(p["cc"])
         names = COUNTRY_ALIASES.get(p["country"], [norm(p["country"])])
         qs.append({"q": f'{p["country"]} live webcam', "city": "", "country": p["country"],
-                   "cc": p["cc"], "lat": None, "lon": None, "match": names})
+                   "cc": p["cc"], "lat": None, "lon": None, "match": names, "cmatch": []})
     return qs
 
 
@@ -173,21 +176,22 @@ def search(query, fetch):
                          norm(sn.get("channelTitle", ""))])
         if not vid:
             continue
-        if sn.get("liveBroadcastContent") == "none":
-            skipped.append(("not live", title))
-            continue
         if not has_any(title, CAM_WORDS):
             skipped.append(("not a cam", title))
             continue
         if has_any(title, BLOCK_WORDS):
             skipped.append(("blocked word", title))
             continue
-        if not words_in(text, query["match"]):
+        if words_in(text, query["match"]):
+            city, lat, lon = query["city"], query["lat"], query["lon"]
+        elif query.get("cmatch") and words_in(text, query["cmatch"]):
+            city, lat, lon = "", None, None  # right country, other/unknown city
+        else:
             skipped.append(("wrong place", title))
-            continue  # stream is not clearly about this place
+            continue
         found.append({
-            "id": vid, "city": query["city"], "country": query["country"], "cc": query["cc"],
-            "lat": query["lat"], "lon": query["lon"], "firstSeen": now_iso(),
+            "id": vid, "city": city, "country": query["country"], "cc": query["cc"],
+            "lat": lat, "lon": lon, "firstSeen": now_iso(),
         })
     print(f'[{query["q"]}] results={len(items)} kept={len(found)}')
     for why, t in skipped[:4]:
