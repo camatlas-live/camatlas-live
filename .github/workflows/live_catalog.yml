@@ -19,7 +19,7 @@ jobs:
       - name: Build catalog
         env:
           YT_API_KEY: ${{ secrets.YT_API_KEY }}
-        run: python build_live_catalog.py --budget 30
+        run: python build_live_catalog.py --budget 25
       - name: Save catalog
         run: |
           git config user.name "catalog-bot"
