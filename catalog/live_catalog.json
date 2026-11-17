@@ -1,7 +1,50 @@
 {
- "updated": "2026-11-17T01:31:17+00:00",
+ "updated": "2026-11-17T02:25:32+00:00",
  "source": "YouTube",
- "cursor": 60,
- "count": 0,
- "streams": []
+ "cursor": 62,
+ "count": 3,
+ "streams": [
+  {
+   "id": "2gTngw2CWo4",
+   "city": "Nice",
+   "country": "France",
+   "cc": "FR",
+   "lat": 43.7,
+   "lon": 7.27,
+   "firstSeen": "2026-11-17T02:25:32+00:00",
+   "title": "North Pole Live 2026 - Nice List & Santa Tracker - Christmas Countdown 🎅🏼",
+   "channel": "Festive Studio",
+   "thumb": "https://i.ytimg.com/vi/2gTngw2CWo4/hqdefault.jpg?v=6afa3f50",
+   "viewers": 130,
+   "checked": "2026-11-17T02:25:32+00:00"
+  },
+  {
+   "id": "i3FKvAVRtm4",
+   "city": "",
+   "country": "France",
+   "cc": "FR",
+   "lat": null,
+   "lon": null,
+   "firstSeen": "2026-11-17T02:25:32+00:00",
+   "title": "Protest Fury Engulfs France As 800,000 Take To Streets, Violent Clashes And Arson Spread | CRUX LIVE",
+   "channel": "CRUX",
+   "thumb": "https://i.ytimg.com/vi/i3FKvAVRtm4/hqdefault.jpg?v=6ad4fb16",
+   "viewers": 10,
+   "checked": "2026-11-17T02:25:32+00:00"
+  },
+  {
+   "id": "QI-PPEW2Bgc",
+   "city": "Eiffel Tower",
+   "country": "France",
+   "cc": "FR",
+   "lat": 48.858,
+   "lon": 2.294,
+   "firstSeen": "2026-11-17T02:25:32+00:00",
+   "title": "Live Webcam - Vue de Paris avec la Tour Eiffel et la Tour Montparnasse",
+   "channel": "Paris75Webcam",
+   "thumb": "https://i.ytimg.com/vi/QI-PPEW2Bgc/hqdefault.jpg?v=278c",
+   "viewers": 5,
+   "checked": "2026-11-17T02:25:32+00:00"
+  }
+ ]
 }
