@@ -115,8 +115,16 @@ def tfl_london(cfg) -> list:
 
 def finland(cfg) -> list:
     """Finland (Fintraffic Digitraffic weathercams). Open, no key. Images ~10 min."""
-    hdr = {"User-Agent": "CamAtlas/1.0", "Digitraffic-User": "CamAtlas"}
-    data = fetch("https://tie.digitraffic.fi/api/weathercam/v1/stations", headers=hdr)
+    import gzip as _gzip
+    hdr = {"User-Agent": "CamAtlas/1.0", "Digitraffic-User": "CamAtlas",
+           "Accept": "application/json", "Accept-Encoding": "gzip"}
+    req = urllib.request.Request(
+        "https://tie.digitraffic.fi/api/weathercam/v1/stations", headers=hdr)
+    with urllib.request.urlopen(req, timeout=45, context=_CTX) as r:
+        raw = r.read()
+        if r.headers.get("Content-Encoding") == "gzip":
+            raw = _gzip.decompress(raw)
+        data = json.loads(raw)
     out = []
     for ft in data.get("features", []):
         g = ft.get("geometry", {}) or {}
@@ -266,7 +274,9 @@ def hong_kong(cfg) -> list:
            "code/Traffic_Camera_Locations_En.csv")
     req = urllib.request.Request(url, headers={"User-Agent": "CamAtlas/1.0"})
     with urllib.request.urlopen(req, timeout=40, context=_CTX) as r:
-        rows = _csv_rows(r.read().decode("utf-8-sig", "ignore"))
+        text = r.read().decode("utf-8-sig", "ignore")
+    import csv as _csv
+    rows = list(_csv.DictReader(text.splitlines()))
     out = []
     for r in rows:
         low = {k.lower().strip(): (v or "").strip() for k, v in r.items()}
@@ -376,8 +386,8 @@ SOURCES = [
 
     # 511 systems (US / Canada) — one shared format (rest511).
     # Open (no key):
-    {"name": "Alberta (511)", "fn": rest511,
-     "cfg": {"host": "511.alberta.ca", "region": "Alberta", "country": "Canada", "cc": "CA", "source": "511AB"}},
+    {"name": "Alberta (511)", "fn": rest511, "env": "AB511_KEY",
+     "cfg": {"host": "511.alberta.ca", "region": "Alberta", "country": "Canada", "cc": "CA", "source": "511AB", "env": "AB511_KEY"}},
     # Keyed — each turns on automatically once its GitHub secret is set:
     {"name": "New York (511NY)", "fn": rest511, "env": "NY511_KEY",
      "cfg": {"host": "511ny.org", "region": "New York", "country": "United States", "cc": "US", "source": "511NY", "env": "NY511_KEY"}},
@@ -434,6 +444,7 @@ REGISTER_FOR = {
     "AZ511_KEY": "Arizona       — https://az511.com/developers/doc",
     "NL511_KEY": "Newfoundland  — https://511nl.ca/developers/doc",
     "YT511_KEY": "Yukon         — https://511yukon.ca/developers/doc",
+    "AB511_KEY": "Alberta       — https://511.alberta.ca/developers/doc",
     "ID511_KEY": "Idaho         — https://511.idaho.gov/developers",
     "AK511_KEY": "Alaska        — https://511.alaska.gov/developers",
     "NV511_KEY": "Nevada        — https://www.nvroads.com/developers",
