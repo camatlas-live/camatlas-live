@@ -156,9 +156,11 @@ def build_queries(places):
 
 
 def search(query, fetch):
+    # Note: YouTube's eventType=live filter often returns nothing, so we search
+    # normally and confirm which results are live right now in verify().
     data = fetch("search", {
-        "part": "snippet", "type": "video", "eventType": "live",
-        "maxResults": 25, "q": query["q"], "safeSearch": "strict",
+        "part": "snippet", "type": "video",
+        "maxResults": 50, "q": query["q"], "safeSearch": "moderate",
     })
     found = []
     items = data.get("items", [])
@@ -170,6 +172,9 @@ def search(query, fetch):
         text = " ".join([title, norm(html.unescape(sn.get("description", ""))),
                          norm(sn.get("channelTitle", ""))])
         if not vid:
+            continue
+        if sn.get("liveBroadcastContent") == "none":
+            skipped.append(("not live", title))
             continue
         if not has_any(title, CAM_WORDS):
             skipped.append(("not a cam", title))
