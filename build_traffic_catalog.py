@@ -279,7 +279,11 @@ def hong_kong(cfg) -> list:
     rows = list(_csv.DictReader(text.splitlines()))
     out = []
     for r in rows:
-        low = {k.lower().strip(): (v or "").strip() for k, v in r.items()}
+        low = {}
+        for k, v in r.items():
+            if not k:
+                continue
+            low[k.lower().strip()] = v.strip() if isinstance(v, str) else ""
         image = _http(low.get("url") or low.get("image") or low.get("image_url"))
         if not image:
             continue
