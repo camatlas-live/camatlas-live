@@ -99,7 +99,34 @@ BLOCK_WORDS = [r"news", r"music", r"radio", r"lofi", r"lo-fi", r"gaming", r"mine
                r"onlyfans", r"dating", r"scanner", r"#shorts", r"sounds", r"relax",
                r"meditation", r"prank", r"giveaway", r"concert", r"\bvs\.?\b",
                r"around the world", r"random cams", r"top live webcams", r"rolling cam",
-               r"interview", r"press conference", r"election", r"debate"]
+               r"interview", r"press conference", r"election", r"debate", r"protest",
+               r"clashes", r"riot", r"breaking", r"\bwar\b", r"attack", r"santa claus", r"santa tracker",
+               r"north pole", r"nice list", r"countdown", r"re-live", r"\btv live\b"]
+# Channels to skip (news/TV stations rather than webcam owners).
+BLOCK_CHANNELS = [r"news", r"\btv\b", r"crux", r"times", r"post", r"cnn", r"bbc", r"sky "]
+# Names that mean "this is a different place with the same name".
+NOT_HERE = {
+    "Venice": ["venice beach", "boardwalk", "los angeles", "california"],
+    "Geneva": ["lake geneva, wi", "wisconsin", "illinois", "ohio"],
+    "Nice": ["nice list"],
+    "Monaco": ["hotel monaco"],
+    "Chamonix": ["cripple creek", "colorado"],
+}
+US_STATES = ["alabama", "alaska", "arizona", "arkansas", "california", "colorado",
+             "connecticut", "delaware", "florida", "idaho", "illinois", "indiana",
+             "iowa", "kansas", "kentucky", "louisiana", "maine", "maryland",
+             "massachusetts", "michigan", "minnesota", "mississippi", "missouri",
+             "montana", "nebraska", "nevada", "new hampshire", "new jersey",
+             "new mexico", "north carolina", "north dakota", "ohio", "oklahoma",
+             "oregon", "pennsylvania", "rhode island", "south carolina", "south dakota",
+             "tennessee", "texas", "utah", "vermont", "virginia", "wisconsin", "wyoming"]
+# Place names that are also common words or exist in several countries:
+# never used to reject a stream as "other place".
+AMBIGUOUS = {"nice", "split", "como", "porto", "turkey", "jordan", "georgia", "chile",
+             "wellington", "perth", "halifax", "brighton", "santiago", "victoria",
+             "manchester", "geneva", "venice", "monaco", "lima", "bergen", "cancun",
+             "medina", "aruba", "malta", "fiji", "bali", "sicily", "cusco"}
+_CONFLICTS = {}  # filled by build_queries: country -> names of other countries/cities
 
 
 def norm(s: str) -> str:
@@ -114,6 +141,23 @@ def has_any(text: str, patterns) -> bool:
 
 def words_in(text: str, names) -> bool:
     return any(re.search(r"(?<![a-z])" + re.escape(n), text) for n in names)
+
+
+def place_ok(text: str, city: str, country: str) -> bool:
+    """False when the text clearly points to a different place."""
+    if city and words_in(text, NOT_HERE.get(city, [])):
+        return False
+    if country != "United States" and words_in(text, US_STATES):
+        return False
+    own = set(ALIASES.get(city, [norm(city)])) if city else set()
+    own |= set(COUNTRY_ALIASES.get(country, [norm(country)]))
+    for name in _CONFLICTS.get(country, []):
+        # skip names that are part of our own names (e.g. "york" in "new york")
+        if any(name in o or o in name for o in own):
+            continue
+        if re.search(r"(?<![a-z])" + re.escape(name) + r"(?![a-z])", text):
+            return False
+    return True
 
 
 def now_iso() -> str:
@@ -141,6 +185,17 @@ def fetch_json(path: str, params: dict) -> dict:
 
 def build_queries(places):
     """One query per city, then one per country."""
+    by_country = {}
+    for p in places:
+        names = ALIASES.get(p["city"], [norm(p["city"])])
+        names = [n for n in names if len(n) >= 4 and n not in AMBIGUOUS]
+        by_country.setdefault(p["country"], set()).update(names)
+        by_country[p["country"]].update(
+            n for n in COUNTRY_ALIASES.get(p["country"], [norm(p["country"])])
+            if len(n) >= 4 and n not in AMBIGUOUS)
+    _CONFLICTS.clear()
+    for c in by_country:
+        _CONFLICTS[c] = sorted({n for o, ns in by_country.items() if o != c for n in ns})
     qs = []
     for p in places:
         names = ALIASES.get(p["city"], [norm(p["city"])])
@@ -179,8 +234,11 @@ def search(query, fetch):
         if not has_any(title, CAM_WORDS):
             skipped.append(("not a cam", title))
             continue
-        if has_any(title, BLOCK_WORDS):
+        if has_any(title, BLOCK_WORDS) or has_any(norm(sn.get("channelTitle", "")), BLOCK_CHANNELS):
             skipped.append(("blocked word", title))
+            continue
+        if not place_ok(text, query["city"], query["country"]):
+            skipped.append(("other place", title))
             continue
         if words_in(text, query["match"]):
             city, lat, lon = query["city"], query["lat"], query["lon"]
@@ -220,7 +278,12 @@ def verify(streams, fetch):
                 continue
             if st.get("madeForKids"):
                 continue
-            if has_any(norm(sn.get("title", "")), BLOCK_WORDS):
+            t = norm(sn.get("title", ""))
+            vtext = " ".join([t, norm(sn.get("description", ""))[:400], norm(sn.get("channelTitle", ""))])
+            if has_any(t, BLOCK_WORDS) or has_any(norm(sn.get("channelTitle", "")), BLOCK_CHANNELS):
+                continue
+            entry = by_id[v["id"]]
+            if not place_ok(vtext, entry.get("city", ""), entry.get("country", "")):
                 continue
             s = dict(by_id[v["id"]])
             thumbs = sn.get("thumbnails", {})
@@ -255,7 +318,9 @@ def run(budget: int, fetch=fetch_json) -> dict:
         while searched < min(budget, len(queries)):
             q = queries[cursor]
             for s in search(q, fetch):
-                streams.setdefault(s["id"], s)  # first placement wins
+                old_s = streams.get(s["id"])
+                if old_s is None or (not old_s.get("city") and s.get("city")):
+                    streams[s["id"]] = s  # new, or now we know the city
             cursor = (cursor + 1) % len(queries)
             searched += 1
     except QuotaExceeded:
